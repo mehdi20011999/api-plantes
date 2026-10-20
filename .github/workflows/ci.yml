@@ -1,0 +1,35 @@
+name: API Plantes
+
+on: [push, pull_request, workflow_dispatch]
+
+jobs:
+  tests:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: Installer les dépendances
+        run: pip install -r requirements-dev.txt
+      - name: Tests
+        run: pytest -v
+
+  docker:
+    needs: tests
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Construire l'image
+        run: docker build -t api-plantes .
+      - name: Démarrer le conteneur et l'interroger
+        run: |
+          docker run -d --name api -p 8000:8000 api-plantes
+          for i in $(seq 30); do curl -sf http://localhost:8000/health && break; sleep 1; done
+          pip install -q pillow
+          python3 -c "from PIL import Image; Image.new('RGB',(300,300),(30,120,40)).save('feuille.png')"
+          curl -sf -F "file=@feuille.png;type=image/png" http://localhost:8000/predict | tee reponse.json
+          python3 -c "import json; r=json.load(open('reponse.json')); assert 'classe' in r and 'top3' in r"
+      - name: Journaux du conteneur
+        if: always()
+        run: docker logs api || true
